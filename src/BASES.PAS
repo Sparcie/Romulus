@@ -3,7 +3,7 @@
 unit Bases;
 
 interface
-uses RST,planets,shiputil,shipclas,parts,hull,map,shipstat,diplo;
+uses RST,planets,shiputil,shipclas,parts,hull,map,shipstat,diplo, messages;
 
 var
    sbases     : array[1..400] of starbaseptr;
@@ -131,13 +131,8 @@ implementation
    begin
       {this function returns the index for a special ship that needs to be built}
       checkSpecialShips:=0;
-      { we require at least one supply freighter!}
-      if ((hullCount(17)=0) and (tech=6) and (hulldemand[1]>0) ) then
-      begin
-	 checkSpecialShips:=supplyFreighter(tech);
-	 exit;
-      end; { checkSpecialShips }
-      if (stasks[6]<2) then
+      z := bestFHunter(tech,money);
+      if ((stasks[6]<2) and (hullcount(getHullId(z)) < 3)) then
       begin
 	 checkSpecialShips:=bestFhunter(tech,money);
 	 inc(stasks[6]);
@@ -274,7 +269,7 @@ implementation
         this should choose general purpose craft that each race needs lots of
         and only should be applied to standard non-tech 10 worlds}
       if ((tech >6) or not(shipLimit)) then exit;
-      
+
       if ((player=3) or (player=4) or (player=1) or (player=2) or (player=6)) then
 	 checkSpecialShips := bestCruiser(tech,money);
       if ((player=5)) then
@@ -287,59 +282,89 @@ implementation
 	 checkSpecialShips := lightCarrier(tech,money);      
    end;
 
-   function chooseHull(tech,money,bid : word; var class:word):word;
+   function canBuild( hullid:word; p : planetptr):boolean;
+   var
+      dcost,tcost,mcost,ccost : longint; {cost}
+   begin
+        canBuild := false;
+        dcost := hulls[hullid].dcost;
+	tcost := hulls[hullid].tcost;
+	mcost := hulls[hullid].mcost;
+	ccost := hulls[hullid].cost;
+        if ( (dcost<p^.dmined) and (tcost<p^.tmined) and
+	     (mcost<p^.mmined) and (ccost<p^.credits) ) then
+             canBuild := true;
+   end;
+
+   function chooseHull(tech,money,bid : word; p: planetptr; var class:word):word;
    var
       i,c,d : word;
-      t	 : targetptr;
+      h : array[0..10] of word;
    begin
       chooseHull:=0;
-      {first turn we attempt to build a large deep space freighter}
-      if turnNumber=1 then
-      begin
-	 chooseHull:= supplyFreighter(tech);
-	 class:=1;
-	 exit;
-      end;
-      c:=10; {use to mark the one with most demand}
-      d:=0; {use to measure demand}
-      for i:=0 to 9 do
-	 if hulldemand[i]>d then
-	 begin
-	    c:=i;
-	    d:=hulldemand[i];
-	 end;
-      d:=0;
-      if c=0 then d:= colonyFreighter(tech);
-      if c=1 then d:= supplyFreighter(tech);
-      if c=2 then d:= bestFhunter(tech,money);
-      if c=3 then d:= bestCruiser(tech,money);
-      if c=4 then d:= BattleCruiser(tech,money);
-      if c=5 then d:= BattleShip(tech,money);
-      if c=6 then d:= factory(tech,money);
-      if c=7 then d:= lightCarrier(tech,money);
-      if c=8 then d:= heavyCarrier(tech,money);
-      if c=10 then d:= checkSpecialShips(tech,money);
+      for i:= 0 to 10 do
+        h[i] := 0;
+      if hulldemand[0] > 0 then h[0] := colonyFreighter(tech);
+      if hulldemand[1] > 0 then h[1] := supplyFreighter(tech);
+      if hulldemand[2] > 0 then h[2] := bestFhunter(tech,money);
+      if hulldemand[3] > 0 then h[3] := bestCruiser(tech,money);
+      if hulldemand[4] > 0 then h[4] := BattleCruiser(tech,money);
+      if hulldemand[5] > 0 then h[5] := BattleShip(tech,money);
+      if hulldemand[6] > 0 then h[6] := factory(tech,money);
+      if hulldemand[7] > 0 then h[7] := lightCarrier(tech,money);
+      if hulldemand[8] > 0 then h[8] := heavyCarrier(tech,money);
+      h[10]:= checkSpecialShips(tech,money);
       if ((hulldemand[9]>0) and (tech=10)) then
       begin
 	 i := alchemyNeeded(bid);
-	 if i=0 then d:= findhull(105,tech);
-	 if i=1 then d:= findhull(104,tech);
+	 if i=0 then h[9]:= findhull(105,tech);
+	 if i=1 then h[9]:= findhull(104,tech);
+      end;
+      { check if we can build each hull }
+      for i:= 0 to 10 do
+      begin
+         if not(canBuild( h[i], p )) then
+            h[i] := 0;
+         if ((tech>6) and ( hulls[gethullid(h[i])].tech < 7)) then
+            h[i] := 0;
+      end;
+      {reset choice}
+      c:=0;
+      d:=0;
+      { pick the best warship we could build }
+      for i:= 2 to 8 do
+          if h[i] >0 then
+          begin
+               d:= h[i];
+               c:= i;
+          end;
+      {special ships get priority over standard warships - only for high tech ships at tech 10 bases}
+      if ( h[10] > 0) then
+      begin
+          d:= h[10];
+          c:= 10;
+      end;
+      {freighters get priority for economic reasons.}
+      { colony freighters and supply freighters }
+      if h[1] > 0 then
+      begin
+          d:= h[1];
+          c:= 1;
+      end;
+      if h[0] > 0 then
+      begin
+          d:= h[0];
+          c:= 0;
+      end;
+      {lastly alchemy ships get highest priority at humanoid planets}
+      if h[9] > 0 then
+      begin
+          d:= h[9];
+          c:= 9;
       end;
 
-      if d>0 then
-	 if ((tech>6) and (hulls[getHullid(d)].tech<7)) then d:=0;
-      {$ifdef d_base}
-      write('(c');
-      write(c,')');
-      {$endif}
-      if ((d=0) and not(c=10)) then
-      begin
-	 i:= hulldemand[c];
-	 hulldemand[c]:=0;
-	 d:=chooseHull(tech,money,bid,class);
-	 hulldemand[c]:=i;
-	 c:=class;
-      end;
+      if ((tech>6) and ( hulls[gethullid(d)].tech < 7)) then d:=0;
+
       class:=c;
       chooseHull:=d;
    end;
@@ -354,6 +379,7 @@ implementation
    begin
       with sbases[bid]^ do
       begin
+         if inStorm(chart[baseID].x, chart[baseID].y ) < 21 then exit; {don't build in ion storms}
 	 temp:=10000;
 	 if (p^.credits<maxint) then
 	    temp:=(p^.credits) - 150;
@@ -392,7 +418,11 @@ implementation
 	    Ttype:=0;
 	    Tcount:=0;
 	 end;
-         hl := chooseHull(Htech,temp,bid,cl);
+         hl := chooseHull(Htech,temp,bid,p,cl);
+ 	 {$ifdef d_base}
+	 if Htech=10 then write('!');
+	 write('(s',hl,'sc',cl,')');
+	 {$endif}
 	 if hl = 0 then
 	 begin {we couldn't pick one! construct one out of stock!}
 	    for cl:= 1 to 20 do
@@ -409,9 +439,6 @@ implementation
 	 if ((cl=6) and (fighters>40)) then exit;
 	 if ((cl<10) and not(shipLimit)) then
 	    if hulldemand[cl]<1 then exit;
-	 {$ifdef d_base}
-	 write('(s',hl,'sc',cl,')');
-	 {$endif}
 	 if hl<=0 then exit;
 	 if hl>20 then exit;
 	 temp:= getHullid(hl);
@@ -437,7 +464,7 @@ implementation
 	 tcost:= tcost + (engines[et].tcost*ee);
 	 mcost:= mcost + (engines[et].mcost*ee);
 	 ccost:= ccost + (engines[et].cost*ee);
-	 
+
 	 if bm>0 then
 	    begin
 	       temp:=10000;
@@ -733,7 +760,7 @@ implementation
 		  end;
 	    end;
 	 end;
-      end; 
+      end;
    end; { loadFighters }
 
    procedure fleetModifier;
@@ -915,20 +942,18 @@ implementation
       devel	: boolean;
       pb	: word;
       t		: integer;
-      lowEtechR	: integer;
    begin
       writeln('Using StarBases');
       shipLimit:=false;
       initBase; {needed for initialising ship building}
-      lowEtechR:=1;
       {calculate ship demand}
       for i:=0 to 9 do
 	 hulldemand[i]:=0;
       hulldemand[0]:=5;
       if (turnNumber<50) then hulldemand[0]:=13;
       hulldemand[2]:=1;
-      hulldemand[1]:= 2+ (nworlds div 10);
-      
+      hulldemand[1]:= 2+ (nworlds div 25);
+
       {get more medium sized ships when we need minesweepers (there should be enemies around}
       if ((stasks[1]<sLimits[1]) and (targetCount>0)) then
 	 hulldemand[3] := hulldemand[3] + (sLimits[1] - stasks[1]);
@@ -941,9 +966,7 @@ implementation
 	 new(sbases[i]);
 	 sbases[i]^ := getBase(i)^;
 	 if sbases[i]^.htech=10 then hulldemand[9]:=hulldemand[9]+2;
-	 lowEtechR := max(lowEtechR,sbases[i]^.Etech);
       end;
-      lowEtechR := min(6,lowEtechR);
       if player<9 then hulldemand[6]:=0;
       nbase:=baseCount;
       FleetModifier;
@@ -1010,7 +1033,7 @@ implementation
 		
 		
 	    {here is where we will build ships if we can achieve a certain tech level}
-	    if ((Etech>=lowEtechR) and (Htech>=3) and (Wtech>2)) then
+	    if ((Etech>=5) and (Htech>=3) and (Wtech>2)) then
 	       buildShip(i,p);
 	    
 	    {build fighters}

@@ -109,7 +109,7 @@ begin
 	 if w>0 then
 	    wd := round(distance(nx,ny,chart[w].x,chart[w].y));
 	 sd:=round(distance(x,y,nx,ny));
-	 if sd>wd then
+	 if ((sd>wd) or (sd > 100)) then
 	 begin
 	    s^.action := 1;
 	    s^.target := w;

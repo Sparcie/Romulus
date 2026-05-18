@@ -313,6 +313,22 @@ implementation
 	       {$ifdef d_ships}
 	       write('!');
 	       {$endif}
+	       { check if a slower speed will use no fuel each turn }
+	       for temp := eng downto 1 do
+	       begin
+		  dist := temp * temp; { distance traveled per turn }
+		  dist := fuelUsage(sid,dist,temp);
+		  if dist=0 then
+		  begin {this should be max warp we use 0 fuel a turn}
+		     {$ifdef d_ships}
+		     write('#');
+		     {$endif}
+		     speed := temp;
+		     exit;
+		  end;
+	       end;
+
+	       { ok we don't have enough fuel go to a nearby world and try to get more}
 	       dist := nearestOwnedWorld(x,y);
 	       mission := 4 ;
 	       if player=5 then mission:=9;
@@ -508,8 +524,17 @@ implementation
 	 if s^.action = 2 then
 	 begin
 	    setWaypointS(x,y,dx,dy,s^.target);
-	    if ((dx = 0) and (dy=0) and atShip(x,y,s^.target)) then
+	    findShip(tx,ty,wf,hd,o,s^.target);
+	    if (round(distance(x,y,tx,ty)) < (speed * speed)) then
+	    begin
+	       mission := 8;
+	       intercept := s^.target;
+	    end;
+	    if (((dx = 0) and (dy=0)) or atShip(x,y,s^.target)) then
+	    begin
 	       s^.action:=3;
+	       mission := 5;
+	    end;
 	    if ((dx = 0) and (dy=0) and not(atShip(x,y,s^.target) )) then
 	       s^.action:=7;
 	    speed:=eng;
@@ -520,6 +545,7 @@ implementation
 	    if not(isEnemy(o)) then
 	    begin
 	       s^.action:=7;
+               mission:=5; {turn off intercept mission}
 	       speed:=0;
 	       exit;
 	    end;
@@ -531,7 +557,7 @@ implementation
 	    if ((dx=0) and (dy=0) and (tx=x) and (ty=y) and (wf=0)) then
 	    begin {tow ship to a base}
 	       setWaypointP(x,y,dx,dy,nearestBase(x,y));
-	       mission:=7; 
+	       mission:=7;
 	       tow:=s^.target;
 	       if (atPlanet(x,y,nearestBase(x,y))) then
 	       begin
@@ -546,7 +572,7 @@ implementation
 	       mission:=9;
 	       tow:=0;
 	    end;
-	    
+
 	    if s^.action=3 then mission:=2;
 	    speed:=eng;
 	 end;
@@ -579,6 +605,9 @@ implementation
 	 begin
 	    
 	 end;
+	 if s^.action = 7 then
+	    speed := 0;
+	 
 	 {turn off cloak if at a world we own}
 	 wf := nearestOwnedWorld(x,y);
 	 if ((atPlanet(x,y,wf)) and (mission=10) and (speed=0)) then

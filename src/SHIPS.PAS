@@ -243,6 +243,8 @@ var
 	    l:=60;
 	    if (worlds[i]^.supplies-100)<maxint then
 	       l:=min(worlds[i]^.supplies-100,60);
+	    if l=0 then
+	       l := min(worlds[i]^.supplies, 60); 
 	    if ((worlds[i]^.tmined>2000) and (worlds[i]^.Dmined>2000) and (worlds[i]^.Mmined>2000) and (l>10)) then
 	    begin
 	       if worlds[i]^.supplies<maxint then
@@ -298,7 +300,9 @@ var
       with vessels[sid]^ do
       begin
 	 if s^.ctask = $4003 then exit; {if we are using the standard minesweep then we don't need this!}
+	 if bcount = 0 then exit; {ships without beams should not do this }
 	 field := inMines(x,y);
+	 if not(messages.mines[field].enemy) then exit; { don't sweep our own mines }
          if field<101 then
 	    if ((mission = 10) and not(messages.mines[field].web) and (damage=0)) then exit;
          if ((mission=10) and (field=101)) then exit;
@@ -797,7 +801,7 @@ var
 		  ss^.owner:=0;
 	    
 	    {$ifdef d_ships}
-	    write('(',ss^.task,',',ss^.ctask,',',ss^.action,',',ss^.target,')');
+	    write('(',ss^.task,',',ss^.ctask,',',ss^.action,',',ss^.target,',', ss^.owner, ',', speed, ')');
 	    {$endif}
 	 end;
          writeln;

@@ -794,7 +794,7 @@ implementation
 			u.duranium := 4000 - dmined;
 		     if mmined<4000 then
 			u.molybdenum := 4000 - mmined;
-		     u.supplies := 4000;
+		     u.supplies := 1000;
 		  end;
 		  if ((colonists>2000) or (nrace = 8)) then
 		  begin

@@ -290,7 +290,7 @@ implementation
    var
       cs,us : integer;
       i,l   : integer;
-   begin 
+   begin
       with vessels[sid]^ do
       begin
 	 cs := hulls[hull].cargo - fish;
@@ -320,14 +320,14 @@ implementation
 	 if ((us>0) and atPlanet(x,y,s^.target) and (s^.action=3) ) then
 	 begin {we have a full load and have arrived}
 	    unload(sid,s^.target);
-	    s^.action:=0; 
+	    s^.action:=0;
 	    us:=0;
 	    s^.owner:=0;
 	    s^.target:=0;
 	 end;
       end;
    end; { supplyFreighter }
-   
+
    {procedure which decides which type of freighter a ship should be}
    { and sets task words etc}
    procedure freighterC(sid: word; s:stateptr);
@@ -338,7 +338,7 @@ implementation
       targcol : integer; {target colonists units}
       targsup : integer; {target supply units}
       targmig : integer; {target migration units}
-   
+
    begin
       {ships that are freighters can't do anything else so we don't
       check for other tasks}
@@ -358,8 +358,8 @@ implementation
 	    moneyTransport(sid,s);
 	    exit;
 	 end;
-	 {borg LDSF always do supplies}
-	 if ((player=6) and (cs>600)) then
+	 {LDSF always do supplies}
+	 if (cs>600) then
 	 begin
 	    {$ifdef d_ships}
 	    write('FS');
@@ -468,7 +468,7 @@ implementation
 	 for i:=1 to nvessel do
 	 begin
 	    d:=round(distance(x,y,vessels[i]^.x,vessels[i]^.y));
-	    if ((d<bd) and (vessels[i]^.speed=0) and canRescue(vessels[i]^.id)) then
+	    if ((d<bd) and (vessels[i]^.speed<3) and canRescue(vessels[i]^.id)) then
 	    begin
 	       sh:=vessels[i]^.id;
 	       ls:=i;	
@@ -476,9 +476,28 @@ implementation
 	       bd:=d;
 	    end;
 	 end;
+
+	 if ((sh=0) and (s^.ctask=$4002)) then exit; {didn't find anyone to rescue}
+	 
+	 if ((sh>0) and (s^.ctask=$4002)) then
+	 begin
+	    {ok set waypoint to be the target ship}
+	    s^.action:=2;
+	    s^.target:=sh;
+	    s^.ctask := $4001;
+	    if rcount<6 then
+	       begin
+		  inc(rcount);
+		  rescue[rcount] := sh;
+	       end;
+	    exit;
+	 end;
+	 
 	 if s^.action=2 then
 	 begin
-	    s^.owner := 1;
+	    s^.ctask := $4001;
+            if ((sh>0) and (sh<> s^.target)) then
+               s^.target:=sh; {retarget a new ship to recue - maybe the other got fuel}
 	    if rcount<6 then
 	    begin
 	       inc(rcount);
@@ -486,12 +505,12 @@ implementation
 	    end;
 	    exit; {ship is on-route}
 	 end;
-	 if s^.action=3 then
+	 if ((s^.action=3) or (atship(x,y,s^.target))) then
 	 begin {ship should have arrived with ship in need}
 	    sh := s^.target;
 	    i:=nearestOwnedWorld(x,y);
 	    d:=trunc(distance(x,y,chart[i].x,chart[i].y));
-	    bd:= fuelUsage(sid,d,eng)+5;
+	    bd:= fuelUsage(sid,d,eng)+20;
 	    begin {we are at the ship... give it whatever fuel we can spare}
 	       for i:= 1 to nvessel do
 	       begin
@@ -508,55 +527,78 @@ implementation
 	       s^.action:=1;
 	       s^.target:=nearestOwnedWorld(x,y);
 	    end;
-	    s^.owner:=0;
-	    exit;
+	    s^.ctask:=$4002;
 	 end;
 	   
-	 if (sh>0) then
-	 begin
-	    {ok set waypoint to be the ship}
-	    s^.action:=2;
-	    s^.target:=sh;
-	    s^.owner := 1;
-	    if rcount<6 then
-	       begin
-		  inc(rcount);
-		  rescue[rcount] := sh;
-	       end;	   
-	 end;
       end;
    end; { RescueShip }
 
    procedure tanker(sid	: word; s:stateptr);
    var
-      i	: word;
-      l	: integer;
+      i, fill : word;
+      l       : integer;
    begin
       with vessels[sid]^ do
       begin
          i:=10;
 	 if not(hull=shipclas.tanker(6)) then exit;
-	 if not(shipready(s^.ctask,$4001)) then exit;
+	 if not(shipready(s^.ctask,$4001) or shipready(s^.ctask, $4002)) then exit;
 	 if stasks[4]>4 then
 	 begin
-	    if s^.ctask=$4001 then s^.ctask:=0;
+	    if ((s^.ctask=$4001) or (s^.ctask=$4002)) then s^.ctask:=0;
 	    exit;
 	 end;
 	 inc(stasks[4]);
 	 {$ifdef d_ships}
 	 write('FT');
 	 {$endif}
-	 s^.ctask:=$4001;
-	 if s^.owner = 1 then rescueShip(sid,s)
-	    else
+
+	 mission:=5;
+	 
+	 if ((S^.ctask <> $4001) and (s^.ctask <> $4002)) then
+	    s^.ctask := $4002;
+	 
+	 if s^.ctask = $4001 then
 	 begin
+	    rescueShip(sid,s);
+	    exit;
+	 end;
+        
+	 if (s^.action = 3) then
+	 begin
+	    if atPlanet(x,y,s^.target) then	       
+	    begin
+	       i := findPlanet(s^.target);
+	       {decide if we are filling or depositing}
+	       if (worlds[i]^.nmined<50) then
+	       begin { deposit }
+		  fill := max(0, fuel - 50);
+		  fuel := fuel - fill;
+		  worlds[i]^.Nmined := worlds[i]^.Nmined + fill;
+	       end
+	       else
+	       begin {fill }		  
+		  fill := hulls[hull].fueltank - fuel;
+		  fill := min( fill, worlds[i]^.Nmined);
+		  fuel := fuel + fill;
+		  worlds[i]^.Nmined := worlds[i]^.Nmined - fill;
+	       end;
+	    end;
+	    s^.target := bestFuelSupply(x,y);
+	    s^.action := 1;
+	 end
+         else
 	    if not(s^.action = 1) then
 	    begin
-	       mission := 11;
 	       s^.target := bestFuelSupply(x,y);
-	       if not(atPlanet(x,y,s^.target)) then s^.action:=1;
+	       s^.action := 1;
 	    end;
-	    if (fuel >= (hulls[hull].fueltank*3) div 4) then rescueShip(sid,s);
+	    
+	 if (fuel >= (hulls[hull].fueltank) div 2) then
+	 begin
+	    rescueShip(sid,s);
+	    s^.target := fueldemand;
+	    s^.action := 1;
 	 end;
       end;
    end; { tanker }
